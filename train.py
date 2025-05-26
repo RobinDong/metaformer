@@ -55,7 +55,8 @@ from timm.data import create_dataset, create_loader, resolve_data_config, Mixup,
 from timm.loss import JsdCrossEntropy, SoftTargetCrossEntropy, BinaryCrossEntropy, \
     LabelSmoothingCrossEntropy
 from timm.models import create_model, safe_model_name, resume_checkpoint, load_checkpoint, \
-    convert_splitbn_model, convert_sync_batchnorm, model_parameters, set_fast_norm
+    model_parameters
+from timm.models.layers import convert_splitbn_model, convert_sync_batchnorm, set_fast_norm
 from timm.optim import create_optimizer_v2, optimizer_kwargs
 from timm.scheduler import create_scheduler
 # from timm.utils import ApexScaler, NativeScaler
@@ -334,7 +335,7 @@ group.add_argument('--amp', action='store_true', default=False,
                     help='use NVIDIA Apex AMP or Native AMP for mixed precision training')
 group.add_argument('--apex-amp', action='store_true', default=False,
                     help='Use NVIDIA Apex AMP mixed precision')
-group.add_argument('--native-amp', action='store_true', default=False,
+group.add_argument('--native-amp', action='store_true', default=True,
                     help='Use Native Torch AMP mixed precision')
 group.add_argument('--no-ddp-bb', action='store_true', default=False,
                     help='Force broadcast buffers for native DDP to off.')
@@ -512,7 +513,8 @@ def main():
         if args.local_rank == 0:
             _logger.info('Using NVIDIA APEX AMP. Training in mixed precision.')
     elif use_amp == 'native':
-        amp_autocast = torch.cuda.amp.autocast
+        print("Use native bfloat16!")
+        amp_autocast = torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16)
         loss_scaler = NativeScaler()
         if args.local_rank == 0:
             _logger.info('Using native Torch AMP. Training in mixed precision.')
@@ -530,6 +532,7 @@ def main():
             loss_scaler=None if args.no_resume_opt else loss_scaler,
             log_info=args.local_rank == 0)
 
+    model = torch.compile(model)
     # setup exponential moving average of model weights, SWA could be used here too
     model_ema = None
     if args.model_ema:
@@ -778,7 +781,7 @@ def train_one_epoch(
         if args.channels_last:
             input = input.contiguous(memory_format=torch.channels_last)
 
-        with amp_autocast():
+        with amp_autocast:
             output = model(input)
             loss = loss_fn(output, target)
 
@@ -879,7 +882,7 @@ def validate(model, loader, loss_fn, args, amp_autocast=suppress, log_suffix='')
             if args.channels_last:
                 input = input.contiguous(memory_format=torch.channels_last)
 
-            with amp_autocast():
+            with amp_autocast:
                 output = model(input)
             if isinstance(output, (tuple, list)):
                 output = output[0]
