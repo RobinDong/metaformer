@@ -424,7 +424,7 @@ class Pooling(nn.Module):
         y = x.permute(0, 3, 1, 2)
         y = self.pool(y)
         y = y.permute(0, 2, 3, 1)
-        return y - x
+        return y + x
 
 
 class Mlp(nn.Module):

@@ -5,6 +5,7 @@ ALL_BATCH_SIZE=8192
 NUM_GPU=1
 GRAD_ACCUM_STEPS=1 # Adjust according to your GPU numbers and memory size.
 BATCH_SIZE=$(expr $ALL_BATCH_SIZE / $NUM_GPU / $GRAD_ACCUM_STEPS )
+before=`date`
 
 torchrun --nproc_per_node=1 train.py $DATA_PATH \
 --dataset cifar100 \
@@ -19,7 +20,7 @@ torchrun --nproc_per_node=1 train.py $DATA_PATH \
 --grad-accum-steps $GRAD_ACCUM_STEPS \
 --drop-path 0.0 \
 --head-dropout 0.0 \
---epochs 100 \
---start-epoch 0 \
---no-resume-opt \
---resume poolformerv2_s12.pth
+--epochs 1600
+
+echo $before
+date
