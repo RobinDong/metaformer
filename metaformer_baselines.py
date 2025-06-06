@@ -419,10 +419,22 @@ class Pooling(nn.Module):
         super().__init__()
         self.pool = nn.AvgPool2d(
             pool_size, stride=1, padding=pool_size//2, count_include_pad=False)
+        dim = kwargs['dim']
+        reduction_ratio = 4
+        self.fc1 = nn.Linear(dim, dim // reduction_ratio)
+        self.fc2 = nn.Linear(dim // reduction_ratio, dim)
+        self.relu = nn.ReLU()
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         y = x.permute(0, 3, 1, 2)
-        y = self.pool(y)
+
+        batch_size, num_channels, _, _ = y.size() # B, C, H, W
+        squeeze_tensor = y.view(batch_size, num_channels, -1).mean(dim=2)
+        fc_out_1 = self.relu(self.fc1(squeeze_tensor))
+        fc_out_2 = self.sigmoid(self.fc2(fc_out_1))
+        y = torch.mul(y, fc_out_2.view(batch_size, num_channels, 1, 1))
+
         y = y.permute(0, 2, 3, 1)
         return y + x
 
