@@ -16,7 +16,8 @@ torchrun --nproc_per_node=2 train.py $DATA_PATH \
 --grad-accum-steps $GRAD_ACCUM_STEPS \
 --drop-path 0.0 \
 --head-dropout 0.0 \
---workers 32 \
+--workers 64 \
 --pin-mem \
 --log-interval 1000 \
---epochs 300
+--epochs 300 \
+--weight-decay 0.02

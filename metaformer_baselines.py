@@ -420,11 +420,25 @@ class Pooling(nn.Module):
         self.pool = nn.AvgPool2d(
             pool_size, stride=1, padding=pool_size//2, count_include_pad=False)
 
+        k_size=3
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.conv = nn.Conv1d(1, 1, kernel_size=k_size, padding=(k_size - 1) // 2, bias=False)
+        self.sigmoid = nn.Sigmoid()
+
     def forward(self, x):
-        y = x.permute(0, 3, 1, 2)
-        y = self.pool(y)
-        y = y.permute(0, 2, 3, 1)
-        return y + x
+        y1 = x.permute(0, 3, 1, 2)
+
+        y2 = self.avg_pool(y1)
+        y2 = self.conv(y2.squeeze(-1).transpose(-1, -2)).transpose(-1, -2).unsqueeze(-1)
+        y2 = self.sigmoid(y2)
+        y2 = y1 * y2.expand_as(y1)
+
+        y1 = self.pool(y1) + y2
+        #print("y1, y2:", y1.size(), y2.size())
+        # y1, y2: torch.Size([8192, 64, 14, 14]) torch.Size([8192, 64, 14, 14])
+        y1 = y1.permute(0, 2, 3, 1)
+
+        return y1
 
 
 class Mlp(nn.Module):
