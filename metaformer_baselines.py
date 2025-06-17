@@ -18,6 +18,7 @@ ConvFormer and CAFormer.
 Some implementations are modified from timm (https://github.com/rwightman/pytorch-image-models).
 """
 from functools import partial
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -410,6 +411,32 @@ class SepConv(nn.Module):
         return x
 
 
+class GhostModule(nn.Module):
+    def __init__(self, inp, oup, kernel_size=1, ratio=2, dw_size=3, stride=1, relu=True):
+        super(GhostModule, self).__init__()
+        self.oup = oup
+        init_channels = math.ceil(oup / ratio)
+        new_channels = init_channels*(ratio-1)
+
+        self.primary_conv = nn.Sequential(
+            nn.Conv2d(inp, init_channels, kernel_size, stride, kernel_size//2, bias=False),
+            nn.BatchNorm2d(init_channels),
+            nn.ReLU(inplace=True) if relu else nn.Sequential(),
+        )
+
+        self.cheap_operation = nn.Sequential(
+            nn.Conv2d(init_channels, new_channels, dw_size, 1, dw_size//2, groups=init_channels, bias=False),
+            nn.BatchNorm2d(new_channels),
+            nn.ReLU(inplace=True) if relu else nn.Sequential(),
+        )
+
+    def forward(self, x):
+        x1 = self.primary_conv(x)
+        x2 = self.cheap_operation(x1)
+        out = torch.cat([x1,x2], dim=1)
+        return out[:,:self.oup,:,:]
+
+
 class Pooling(nn.Module):
     """
     Implementation of pooling for PoolFormer: https://arxiv.org/abs/2111.11418
@@ -417,6 +444,7 @@ class Pooling(nn.Module):
     """
     def __init__(self, pool_size=3, **kwargs):
         super().__init__()
+        print("kwargs:", kwargs)
         self.pool = nn.AvgPool2d(
             pool_size, stride=1, padding=pool_size//2, count_include_pad=False)
 
@@ -425,15 +453,17 @@ class Pooling(nn.Module):
         self.conv = nn.Conv1d(1, 1, kernel_size=k_size, padding=(k_size - 1) // 2, bias=False)
         self.sigmoid = nn.Sigmoid()
 
+        self.gm = GhostModule(kwargs["dim"], kwargs["dim"])
+
     def forward(self, x):
         y1 = x.permute(0, 3, 1, 2)
 
-        y2 = self.avg_pool(y1)
+        '''y2 = self.avg_pool(y1)
         y2 = self.conv(y2.squeeze(-1).transpose(-1, -2)).transpose(-1, -2).unsqueeze(-1)
         y2 = self.sigmoid(y2)
-        y2 = y1 * y2.expand_as(y1)
+        y2 = y1 * y2.expand_as(y1)'''
 
-        y1 = self.pool(y1) + y2
+        y1 = self.pool(y1) + self.gm(y1)
         #print("y1, y2:", y1.size(), y2.size())
         # y1, y2: torch.Size([8192, 64, 14, 14]) torch.Size([8192, 64, 14, 14])
         y1 = y1.permute(0, 2, 3, 1)
