@@ -49,6 +49,7 @@ import torch.nn as nn
 import torchvision.utils
 import yaml
 from torch.nn.parallel import DistributedDataParallel as NativeDDP
+from torch.utils.data import Dataset
 
 from timm import utils
 from timm.data import create_dataset, create_loader, resolve_data_config, Mixup, FastCollateMixup, AugMixDataset
@@ -358,6 +359,27 @@ group.add_argument('--log-wandb', action='store_true', default=False,
                     help='log training and validation metrics to wandb')
 
 
+class RepeatDataset(Dataset):
+    def __init__(self, dataset, repeats):
+        self.dataset = dataset
+        self.repeats = repeats
+        self.length = len(dataset) * repeats
+
+    @property
+    def transform(self):
+        return self.dataset.transform
+
+    @transform.setter
+    def transform(self, value):
+        self.dataset.transform = value
+
+    def __getitem__(self, idx):
+        return self.dataset[idx % len(self.dataset)]
+
+    def __len__(self):
+        return self.length
+
+
 def _parse_args():
     # Do we have a config file to parse?
     args_config, remaining = config_parser.parse_known_args()
@@ -576,6 +598,10 @@ def main():
         download=args.dataset_download,
         batch_size=args.batch_size,
         repeats=args.epoch_repeats)
+
+    if args.epoch_repeats > 0:
+        dataset_train = RepeatDataset(dataset_train, int(args.epoch_repeats))
+
     dataset_eval = create_dataset(
         args.dataset, root=args.data_dir, split=args.val_split, is_training=False,
         class_map=args.class_map,

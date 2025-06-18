@@ -20,7 +20,8 @@ torchrun --nproc_per_node=1 train.py $DATA_PATH \
 --grad-accum-steps $GRAD_ACCUM_STEPS \
 --drop-path 0.0 \
 --head-dropout 0.0 \
---epochs 1600
+--epochs 40 \
+--epoch-repeats 40
 
 echo $before
 date
