@@ -501,7 +501,7 @@ class Pooling(nn.Module):
         y2 = y1 * y2.expand_as(y1)
 
         y1 = self.pool(y1) + y2'''
-        y1 = self.cbam(y1)
+        y1 = self.pool(y1) + self.cbam(y1)
         #print("y1, y2:", y1.size(), y2.size())
         # y1, y2: torch.Size([8192, 64, 14, 14]) torch.Size([8192, 64, 14, 14])
         y1 = y1.permute(0, 2, 3, 1)
