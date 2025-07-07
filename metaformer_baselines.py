@@ -194,8 +194,8 @@ class Downsampling(nn.Module):
     """
     Downsampling implemented by a layer of convolution.
     """
-    def __init__(self, in_channels, out_channels, 
-        kernel_size, stride=1, padding=0, 
+    def __init__(self, in_channels, out_channels,
+        kernel_size, stride=1, padding=0,
         pre_norm=None, post_norm=None, pre_permute=False):
         super().__init__()
         self.pre_norm = pre_norm(in_channels) if pre_norm else nn.Identity()
@@ -440,6 +440,20 @@ class EMA(nn.Module):
         return (group_x * weights.sigmoid()).reshape(b, c, h, w)
 
 
+class MultiScalePooling(nn.Module):
+    def __init__(self, in_channels, pool_kernels=[3, 5, 7]):
+        super().__init__()
+        self.pools = nn.ModuleList([
+            nn.AvgPool2d(k, stride=1, padding=k // 2) for k in pool_kernels
+        ])
+        self.project = nn.Conv2d(in_channels * len(pool_kernels), in_channels, 1)
+
+    def forward(self, x):
+        pooled_feats = [pool(x) for pool in self.pools]
+        pooled_concat = torch.cat(pooled_feats, dim=1)  # concat along channels
+        return self.project(pooled_concat)  # unify channels back
+
+
 class Pooling(nn.Module):
     """
     Implementation of pooling for PoolFormer: https://arxiv.org/abs/2111.11418
@@ -455,11 +469,16 @@ class Pooling(nn.Module):
         self.conv = nn.Conv1d(1, 1, kernel_size=k_size, padding=(k_size - 1) // 2, bias=False)
         self.sigmoid = nn.Sigmoid()
         self.ema = EMA(kwargs['dim'])
+        self.msp = MultiScalePooling(kwargs['dim'])
+        self.fusion_proj = nn.Conv2d(kwargs['dim'] * 2, kwargs['dim'], 1)
 
     def forward(self, x):
         y1 = x.permute(0, 3, 1, 2)
 
-        y1 = self.pool(y1) + self.ema(y1)
+        ye = self.ema(y1)
+        yp = self.msp(y1)
+        y = torch.cat([ye, yp], dim=1)
+        y1 = self.fusion_proj(y)
         #print("y1, y2:", y1.size(), y2.size())
         # y1, y2: torch.Size([8192, 64, 14, 14]) torch.Size([8192, 64, 14, 14])
         y1 = y1.permute(0, 2, 3, 1)
