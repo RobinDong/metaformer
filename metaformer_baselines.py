@@ -423,8 +423,9 @@ class Pooling(nn.Module):
     def forward(self, x):
         y = x.permute(0, 3, 1, 2)
         y = self.pool(y)
+        y = F.softmax(y, dim=1)
         y = y.permute(0, 2, 3, 1)
-        return y + x
+        return y * x
 
 
 class Mlp(nn.Module):
