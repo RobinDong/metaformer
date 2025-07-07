@@ -633,6 +633,9 @@ class MetaFormer(nn.Module):
             self.head = head_fn(dims[-1], num_classes)
 
         self.apply(self._init_weights)
+        pool_size = 3
+        self.avg_pool = nn.AvgPool2d(pool_size, stride=1, padding=pool_size//2, count_include_pad=False)
+        self.max_pool = nn.MaxPool2d(pool_size, stride=1, padding=pool_size//2)
 
     def _init_weights(self, m):
         if isinstance(m, (nn.Conv2d, nn.Linear)):
@@ -646,8 +649,11 @@ class MetaFormer(nn.Module):
 
     def forward_features(self, x):
         for i in range(self.num_stage):
-            x = self.downsample_layers[i](x)
-            x = self.stages[i](x)
+            x1 = self.downsample_layers[i](x)
+            ax1 = self.avg_pool(x1)
+            mx1 = self.max_pool(x1)
+            x2 = self.stages[i](x1) + ax1 + mx1
+            x = x2
         return self.norm(x.mean([1, 2])) # (B, H, W, C) -> (B, C)
 
     def forward(self, x):
