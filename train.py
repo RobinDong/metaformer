@@ -375,6 +375,30 @@ def _parse_args():
     return args, args_text
 
 
+class DistillationLoss(nn.Module):
+    def __init__(self, base_loss, teacher_model, temperature=1.0, alpha=0.5):
+        super().__init__()
+        self.base_loss = base_loss
+        self.teacher_model = teacher_model
+        self.temperature = temperature
+        self.alpha = alpha
+        self.kl_div = nn.KLDivLoss(reduction='batchmean')
+
+    def forward(self, student_logits, targets, inputs):
+        # Student loss
+        loss_student = self.base_loss(student_logits, targets)
+        # Teacher outputs (no grad)
+        with torch.no_grad():
+            teacher_logits = self.teacher_model(inputs)
+        # Distillation loss
+        loss_distill = self.kl_div(
+            nn.functional.log_softmax(student_logits / self.temperature, dim=1),
+            nn.functional.softmax(teacher_logits / self.temperature, dim=1)
+        ) * (self.temperature ** 2)
+        # Combine
+        return self.alpha * loss_student + (1 - self.alpha) * loss_distill
+
+
 def main():
     utils.setup_default_logging()
     args, args_text = _parse_args()
@@ -449,6 +473,8 @@ def main():
         create_model_args.update(head_dropout=args.head_dropout)
 
     model = create_model(**create_model_args)
+    teacher_model = create_model(model_name="caformer_b36_384_in21ft1k", pretrained=True)
+    teacher_model.eval()
 
     if args.num_classes is None:
         assert hasattr(model, 'num_classes'), 'Model must have `num_classes` attr if not set on cmd line/config.'
@@ -664,7 +690,12 @@ def main():
         if args.bce_loss:
             train_loss_fn = BinaryCrossEntropy(target_threshold=args.bce_target_thresh)
         else:
-            train_loss_fn = SoftTargetCrossEntropy()
+            train_loss_fn = DistillationLoss(
+                SoftTargetCrossEntropy(),
+                teacher_model = teacher_model,
+                temperature=2.0,
+                alpha=0.5
+            )
     elif args.smoothing:
         if args.bce_loss:
             train_loss_fn = BinaryCrossEntropy(smoothing=args.smoothing, target_threshold=args.bce_target_thresh)
@@ -785,7 +816,7 @@ def train_one_epoch(
 
         with amp_autocast:
             output = model(input)
-            loss = loss_fn(output, target)
+            loss = loss_fn(output, target, input)
             _, max_index = torch.max(target, dim=-1)
             acc1, acc5 = utils.accuracy(output, max_index, topk=(1, 5))
 
